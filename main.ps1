@@ -1,4 +1,4 @@
-﻿#fixed variables
+#fixed variables
 $remoteRepositoryUrl = "https://Twaijrigcs@dev.azure.com/Twaijrigcs/Wafi/_git/Wafi"
 $localRepositoryPath = "C:\Storage\publisher-temp"
 $dotNetVersion = "7."
@@ -15,7 +15,7 @@ foreach ($sdk in $installedSdks) {
 }
 
 if ($isDotNetInstalled -eq $false) {
-    Write-Host "Please install dotnet $dotNetVersion and try again."
+    Write-Host "Please install dotnet $dotNetVersion and try again." -ForegroundColor Red
     return
 }
 
@@ -27,29 +27,57 @@ $brnachName = Read-Host "Enter remote branch name"
 #--------------------
 
 # clone remote repository
-Write-Host "Start cloning the remote repository..."
-git clone --branch $brnachName $remoteRepositoryUrl $localRepositoryPath
-Write-Host "Repository has been cloned successfully"
+try {
+    Write-Host "Start cloning the remote repository..." -ForegroundColor Cyan
+    git clone --branch $brnachName $remoteRepositoryUrl $localRepositoryPath
+    Write-Host "Repository has been cloned successfully" -ForegroundColor Cyan
+}
+catch {
+    Write-Host "Failed to clone the repository" -ForegroundColor Red
+    return
+}
 
-#--------------------
-
-# restore nuget packages
-Write-Host "Starting Package Restore..."
-dotnet restore $localRepositoryPath"\Wafi.sln"
-Write-Host "Package Restore has been completed successfully"
 
 #--------------------
 
 # build the application
+try {
+    Write-Host "Start building the API..." -ForegroundColor Cyan
+    dotnet publish  $localRepositoryPath"\src\Wafi.Web\Wafi.Web.csproj" --configuration production --output $localRepositoryPath"\api-publish"
+    Write-Host "API has been built successfully" -ForegroundColor Cyan
+}
+catch {
+    Write-Host "Failed to build the API" -ForegroundColor Red
+    return
+}
 
-# check if db migration is needed
+
+#--------------------
+
+# todo: check if db migration is needed
 
 #--------------------
 
 # build angular application
-Write-Host "Building angular client app..."
-Start-Process -FilePath (Get-Location).path"\ng-build.bat" -ArgumentList $localRepositoryPath"\src\Wafi.Client" -Wait
-Write-Host "Angular client app has been built successfully"
+try {
+    Write-Host "Building angular client app..." -ForegroundColor Cyan
+    $path = Get-Location
+    $batFile = "$path\ng-build.bat"
+    Write-Host $batFile
+    Start-Process -FilePath ..\ -ArgumentList $localRepositoryPath"\src\Wafi.Client" -Wait -WorkingDirectory $path
+    Write-Host "Angular client app has been built successfully" -ForegroundColor Cyan
+
+
+#     $mypath = $MyInvocation.MyCommand.Path
+# $ScriptName = $MyInvocation.ScriptName
+# Write-Output "Path of the script : $ScriptName"
+}
+catch {
+    Write-Host "Failed to build angular client app" -ForegroundColor Red
+    Write-Host "$($_.Exception.Message)" -ForegroundColor Red
+    return
+}
+
 
 # backup the current build on the production server
 
