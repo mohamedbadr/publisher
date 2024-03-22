@@ -1,3 +1,7 @@
+### run this on the client first
+#Get-Item WSMan:\localhost\Client\TrustedHosts
+#Set-Item WSMan:\localhost\Client\TrustedHosts -Value '192.168.13.15' -Concatenate
+
 $remoteComputer = "192.168.13.15"
 $remoteApiFolder = "C:\inetpub\wwwroot\wafi-api"
 $remoteBackupFolder = "D:\AutoPublishBackup"
@@ -15,7 +19,8 @@ if ($null -eq $session) {
     # Copy the folder from remote machine to local machine
     $currentDateTime  = Get-Date
     $remoteBackupFolder = $remoteBackupFolder+"\api\"+$currentDateTime.ToString("ddMMyyyyHHmmss")
-    Copy-Item -Path "\\$remoteComputer\$remoteApiFolder" -Destination $"\\$remoteComputer\$remoteBackupFolder" -Recurse -Session $session
+    Write-Host $remoteBackupFolder
+    Copy-Item -Path $remoteApiFolder -Destination "\\$remoteComputer\$remoteBackupFolder" -Recurse -FromSession $session
     Write-Host "Folder copied successfully from remote computer!"
   } catch {
     Write-Host "Error: Failed to copy folder. $_"  # Capture and display the error message
