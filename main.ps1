@@ -1,4 +1,4 @@
-#fixed variables
+﻿#fixed variables
 $remoteRepositoryUrl = "https://Twaijrigcs@dev.azure.com/Twaijrigcs/Wafi/_git/Wafi"
 $localRepositoryPath = "C:\Storage\publisher-temp"
 $dotNetVersion = "7."
@@ -17,6 +17,11 @@ foreach ($sdk in $installedSdks) {
 if ($isDotNetInstalled -eq $false) {
     Write-Host "Please install dotnet $dotNetVersion and try again." -ForegroundColor Red
     return
+}
+
+if (!(Get-Command npm -ErrorAction SilentlyContinue)) {
+    Write-Host "Error: npm not found. Please install Node.js first." -ForegroundColor Red
+    return;
 }
 
 #--------------------
@@ -61,16 +66,14 @@ catch {
 # build angular application
 try {
     Write-Host "Building angular client app..." -ForegroundColor Cyan
-    $path = Get-Location
-    $batFile = "$path\ng-build.bat"
-    Write-Host $batFile
-    Start-Process -FilePath ..\ -ArgumentList $localRepositoryPath"\src\Wafi.Client" -Wait -WorkingDirectory $path
-    Write-Host "Angular client app has been built successfully" -ForegroundColor Cyan
-
-
-#     $mypath = $MyInvocation.MyCommand.Path
-# $ScriptName = $MyInvocation.ScriptName
-# Write-Output "Path of the script : $ScriptName"
+    Set-Location $localRepositoryPath"\src\Wafi.Client"
+    npm install --force
+    if ($LASTEXITCODE -eq 0) {
+        npm run build
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Angular client app has been built successfully" -ForegroundColor Cyan
+        }
+    }
 }
 catch {
     Write-Host "Failed to build angular client app" -ForegroundColor Red
