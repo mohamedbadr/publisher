@@ -1,9 +1,12 @@
-﻿#fixed variables
+﻿#Note: in iwndows services start: Windows Remote Management (WinRM) service 
+
+
+#fixed variables
 $remoteRepositoryUrl = "https://Twaijrigcs@dev.azure.com/Twaijrigcs/Wafi/_git/Wafi"
 $localRepositoryPath = "C:\Storage\publisher-temp"
 #$dotNetVersion = "7."
 $remoteComputer = "192.168.13.15"
-$remoteApiFolder = "C:\inetpub\wwwroot\wafi-api-pubtest"
+$remoteApiFolder = "C:\inetpub\wwwroot\wafi-api"
 $remoteBackupFolder = "AutoPublishBackup"
 $remoteUsername = "twaijri-kw\pay.server"
 $remotePassword = ConvertTo-SecureString "Fmt@P@ssw0rd2019" -AsPlainText -Force
@@ -60,12 +63,22 @@ $publishApi = Read-Host "Do you want to publish the API? (y/n)"
 $publishAngular = Read-Host "Do you want to publish the Angular client? (y/n)"
 
 #--------------------
+#Delete existing local repository
+
+$localRepositoryPath = "C:\Storage\publisher-temp"
+if (Test-Path -Path $localRepositoryPath) {
+    Write-Host "Deleting existing local repository..." -ForegroundColor Cyan
+    Remove-Item -LiteralPath $localRepositoryPath -Force -Recurse
+    Write-Host "Deleted process completed successfully" -ForegroundColor Green
+}
+
+#--------------------
 
 # clone remote repository
 try {
     Write-Host "Start cloning the remote repository..." -ForegroundColor Cyan
     git clone --branch $brnachName $remoteRepositoryUrl $localRepositoryPath
-    Write-Host "Repository has been cloned successfully" -ForegroundColor Cyan
+    Write-Host "Repository has been cloned successfully" -ForegroundColor Green
 }
 catch {
     Write-Host "Failed to clone the repository" -ForegroundColor Red
@@ -81,7 +94,7 @@ if ($publishApi -eq "y") {
     try {
         Write-Host "Start building the API..." -ForegroundColor Cyan
         dotnet publish  $localRepositoryPath"\src\Wafi.Web\Wafi.Web.csproj" --configuration production --output $localRepositoryPath"\api-publish"
-        Write-Host "API has been built successfully" -ForegroundColor Cyan
+        Write-Host "API has been built successfully" -ForegroundColor Green
     }
     catch {
         Write-Host "Failed to build the API" -ForegroundColor Red
@@ -105,7 +118,7 @@ if ($publishAngular -eq "y") {
         if ($LASTEXITCODE -eq 0) {
             npm run build
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "Angular client app has been built successfully" -ForegroundColor Cyan
+                Write-Host "Angular client app has been built successfully" -ForegroundColor Green
             }
         }
     }
@@ -145,7 +158,7 @@ try {
     }
 
     $backupSuccess = $true
-    Write-Host "Completed backup process" -ForegroundColor Cyan
+    Write-Host "Completed backup process" -ForegroundColor Green
 }
 catch {
     Write-Host "Failed to backup" -ForegroundColor Red
@@ -165,9 +178,10 @@ if ($backupSuccess -eq $false) {
 # copy the application to the production server
 try {
     if ($publishApi -eq "y") {
+        $childItems = Get-ChildItem -Path $localRepositoryPath"\api-publish"
         Write-Host "Copy the API to the server" -ForegroundColor Cyan
-        Copy-Item -Path $localRepositoryPath"\api-publish" -Destination $remoteApiFolder -ToSession $session -Recurse -Verbose
-        Write-Host "ApiI has been copied successfully" -ForegroundColor Cyan
+        Copy-Item -Path $childItems.FullName -Destination $remoteApiFolder"\" -ToSession $session -Recurse -Verbose
+        Write-Host "ApiI has been copied successfully" -ForegroundColor Green
     }
    
 }
