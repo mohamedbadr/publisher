@@ -6,10 +6,21 @@ $remoteRepositoryUrl = "https://Twaijrigcs@dev.azure.com/Twaijrigcs/Wafi/_git/Wa
 $localRepositoryPath = "C:\Storage\publisher-temp"
 #$dotNetVersion = "7."
 $remoteComputer = "192.168.13.15"
-$remoteApiFolder = "C:\inetpub\wwwroot\wafi-api"
+$remoteApiFolder = "C:\inetpub\wwwroot\wafi-staging\wafi-api-staging"
 $remoteBackupFolder = "AutoPublishBackup"
 $remoteUsername = "twaijri-kw\pay.server"
 $remotePassword = ConvertTo-SecureString "Fmt@P@ssw0rd2019" -AsPlainText -Force
+$siteName = "wafi-api-staging"
+$sevenZipPath = "C:\Program Files\7-Zip\7z.exe"
+
+
+
+
+#Import-Module IISAdministration
+#Import-Module $env:windir\System32\inetsrv\Microsoft.Web.Administration
+
+
+
 #--------------------
 
 # check if the framework is installed
@@ -65,7 +76,6 @@ $publishAngular = Read-Host "Do you want to publish the Angular client? (y/n)"
 #--------------------
 #Delete existing local repository
 
-$localRepositoryPath = "C:\Storage\publisher-temp"
 if (Test-Path -Path $localRepositoryPath) {
     Write-Host "Deleting existing local repository..." -ForegroundColor Cyan
     Remove-Item -LiteralPath $localRepositoryPath -Force -Recurse
@@ -146,9 +156,26 @@ try {
     $currentDateTime = Get-Date
 
     if ($publishApi -eq "y") {
-        $remoteApiBackupFolder = $remoteBackupFolder + "\api\" + $currentDateTime.ToString("ddMMyyyyHHmmss")
-        Write-Host "Start API backup" -ForegroundColor Cyan
-        Copy-Item -Path $remoteApiFolder -Destination "\\$remoteComputer\$remoteApiBackupFolder" -Recurse -FromSession $session
+
+        Write-Host "Stop the API site" -ForegroundColor Cyan
+        $stop = { Stop-WebSite $args[0] };  
+        Invoke-Command -Session $session -ScriptBlock $stop -ArgumentList $siteName 
+        Write-Host "API site stopped successfully" -ForegroundColor Green
+
+        Write-Host "Start API backup..." -ForegroundColor Cyan
+
+        Write-Host "Copying to a local folder..." -ForegroundColor Cyan
+        Copy-Item -Path $remoteApiFolder -Destination $localRepositoryPath"\temp" -FromSession $session -Verbose -Recurse
+        Write-Host "do backup on the server ..." -ForegroundColor Cyan
+        $remoteApiBackupFolder = "D:\AutoPublishBackup\\api\" + $currentDateTime.ToString("ddMMyyyyHHmmss")
+        Copy-Item -Path $localRepositoryPath"\temp" -Destination $remoteApiBackupFolder -ToSession $TargetSession -Verbose -Recurse
+
+        Write-Host "deleting local temp folder..." -ForegroundColor Cyan
+        Remove-Item -LiteralPath $localRepositoryPath"\temp" -Force -Recurse
+        
+        # $credentials = New-Object System.Management.Automation.PSCredential($remoteUsername, $remotePassword)
+        # $remoteApiBackupFolder = $remoteBackupFolder + "\api\" + $currentDateTime.ToString("ddMMyyyyHHmmss")
+        # Copy-Item -Path $remoteApiFolder -Destination "\\$remoteComputer\$remoteApiBackupFolder" -Credential $credentials -Recurse -FromSession $session
     }
     
     if ($publishAngular -eq "y") {
@@ -181,7 +208,12 @@ try {
         $childItems = Get-ChildItem -Path $localRepositoryPath"\api-publish"
         Write-Host "Copy the API to the server" -ForegroundColor Cyan
         Copy-Item -Path $childItems.FullName -Destination $remoteApiFolder"\" -ToSession $session -Recurse -Verbose
-        Write-Host "ApiI has been copied successfully" -ForegroundColor Green
+        Write-Host "Api has been copied successfully" -ForegroundColor Green
+
+        Write-Host "Start the API site" -ForegroundColor Cyan
+        $start = { Start-WebSite $args[0] };  
+        Invoke-Command -Session $session -ScriptBlock $stop -ArgumentList $siteName 
+        Write-Host "API site has been started successfully" -ForegroundColor Green
     }
    
 }
