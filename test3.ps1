@@ -1,4 +1,6 @@
 
+$sevenZipPath = "C:\Program Files\7-Zip\7z.exe"
+
 $session = New-PSSession -ComputerName $remoteComputer -Credential (New-Object System.Management.Automation.PSCredential $remoteUsername, $remotePassword)
 
 if ($null -eq $session) {
@@ -24,10 +26,11 @@ try {
         Write-Host "Zipping current version before backup..." -ForegroundColor Cyan
 
         $zipPath = $remoteApiFolder+"\"+$timestamp+".zip"
+        Set-Alias Start-SevenZip $sevenZipPath
         
         $scriptBlock = {
             param($sevenZipPath, $outputZipFile, $remoteApiFolder)
-            & "$sevenZipPath" a -tzip "$outputZipFile" "$remoteApiFolder"
+            & $sevenZipPath a -mx=9 -tzip $outputZipFile $remoteApiFolder
         }
         Invoke-Command -Session $session -ScriptBlock $scriptBlock -ArgumentList $sevenZipPath ,$zipPath, $remoteApiFolder
 
@@ -40,7 +43,7 @@ try {
         Copy-Item -Path $remoteApiFolder\$timestamp.zip -Destination $localRepositoryPath"\temp" -FromSession $session -Verbose -Recurse
         Write-Host "do backup on the server ..." -ForegroundColor Cyan
         $remoteApiBackupFolder = "D:\AutoPublishBackup\\api\" + $timestamp
-        Copy-Item -Path $localRepositoryPath"\temp" -Destination $remoteApiBackupFolder -ToSession $TargetSession -Verbose -Recurse
+        Copy-Item -Path $localRepositoryPath"\temp" -Destination $remoteApiBackupFolder -ToSession $session -Verbose -Recurse
         
         Write-Host "deleting local temp folder..." -ForegroundColor Cyan
         Remove-Item -LiteralPath $localRepositoryPath"\temp" -Force -Recurse

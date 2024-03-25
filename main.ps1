@@ -16,6 +16,7 @@ $sevenZipPath = "C:\Program Files\7-Zip\7z.exe"
 
 
 
+
 #Import-Module IISAdministration
 #Import-Module $env:windir\System32\inetsrv\Microsoft.Web.Administration
 
@@ -154,6 +155,7 @@ if ($null -eq $session) {
 $backupSuccess = $false
 try {
     $currentDateTime = Get-Date
+    $timestamp = $currentDateTime.ToString("ddMMyyyyHHmmss");
 
     if ($publishApi -eq "y") {
 
@@ -163,23 +165,30 @@ try {
         Write-Host "API site stopped successfully" -ForegroundColor Green
 
         Write-Host "Start API backup..." -ForegroundColor Cyan
+        Write-Host "Zipping current version before backup..." -ForegroundColor Cyan
+
+        $zipPath = $remoteApiFolder+"\"+$timestamp+".zip"
+        Set-Alias Start-SevenZip $sevenZipPath
+        
+        $scriptBlock = {
+            param($sevenZipPath, $outputZipFile, $remoteApiFolder)
+            & $sevenZipPath a -mx=9 -tzip $outputZipFile $remoteApiFolder
+        }
+        Invoke-Command -Session $session -ScriptBlock $scriptBlock -ArgumentList $sevenZipPath ,$zipPath, $remoteApiFolder
 
         Write-Host "Copying to a local folder..." -ForegroundColor Cyan
-        Copy-Item -Path $remoteApiFolder -Destination $localRepositoryPath"\temp" -FromSession $session -Verbose -Recurse
+        Copy-Item -Path $remoteApiFolder\$timestamp.zip -Destination $localRepositoryPath"\temp" -FromSession $session -Verbose -Recurse
         Write-Host "do backup on the server ..." -ForegroundColor Cyan
-        $remoteApiBackupFolder = "D:\AutoPublishBackup\\api\" + $currentDateTime.ToString("ddMMyyyyHHmmss")
-        Copy-Item -Path $localRepositoryPath"\temp" -Destination $remoteApiBackupFolder -ToSession $TargetSession -Verbose -Recurse
-
+        $remoteApiBackupFolder = "D:\AutoPublishBackup\\api\" + $timestamp
+        Copy-Item -Path $localRepositoryPath"\temp" -Destination $remoteApiBackupFolder -ToSession $session -Verbose -Recurse
+        
         Write-Host "deleting local temp folder..." -ForegroundColor Cyan
         Remove-Item -LiteralPath $localRepositoryPath"\temp" -Force -Recurse
-        
-        # $credentials = New-Object System.Management.Automation.PSCredential($remoteUsername, $remotePassword)
-        # $remoteApiBackupFolder = $remoteBackupFolder + "\api\" + $currentDateTime.ToString("ddMMyyyyHHmmss")
-        # Copy-Item -Path $remoteApiFolder -Destination "\\$remoteComputer\$remoteApiBackupFolder" -Credential $credentials -Recurse -FromSession $session
+    
     }
     
     if ($publishAngular -eq "y") {
-        $remoteAngularBackupFolder = $remoteBackupFolder + "\ng\" + $currentDateTime.ToString("ddMMyyyyHHmmss")
+        $remoteAngularBackupFolder = $remoteBackupFolder + "\ng\" + $timestamp
         Write-Host "Start Angular backup" -ForegroundColor Cyan
         Copy-Item -Path $remoteApiFolder -Destination "\\$remoteComputer\$remoteAngularBackupFolder" -Recurse -FromSession $session
     }
