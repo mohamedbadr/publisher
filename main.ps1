@@ -1,5 +1,6 @@
 ﻿#Note: in iwndows services start: Windows Remote Management (WinRM) service 
 
+. .\functions.ps1
 
 #fixed variables
 $remoteRepositoryUrl = "https://Twaijrigcs@dev.azure.com/Twaijrigcs/Wafi/_git/Wafi"
@@ -11,7 +12,6 @@ $remoteBackupFolder = "AutoPublishBackup"
 $remoteUsername = "twaijri-kw\pay.server"
 $remotePassword = ConvertTo-SecureString "Fmt@P@ssw0rd2019" -AsPlainText -Force
 $siteName = "wafi-api-staging"
-$sevenZipPath = "C:\Program Files\7-Zip\7z.exe"
 
 
 
@@ -40,7 +40,7 @@ $sevenZipPath = "C:\Program Files\7-Zip\7z.exe"
 
 if (!(Get-Command npm -ErrorAction SilentlyContinue)) {
     Write-Host "Error: npm not found. Please install Node.js first." -ForegroundColor Red
-    return;
+    exit 1
 }
 
 #--------------------
@@ -64,7 +64,7 @@ try {
 catch {
     Write-Host "Failed to add the remote host to the trusted list" -ForegroundColor Red
     Write-Host "$($_.Exception.Message)" -ForegroundColor Red
-    return
+    exit 1
 }
 
 #--------------------
@@ -74,8 +74,8 @@ $brnachName = Read-Host "Enter remote branch name"
 $publishApi = Read-Host "Do you want to publish the API? (y/n)"
 $publishAngular = Read-Host "Do you want to publish the Angular client? (y/n)"
 
-#--------------------
-#Delete existing local repository
+
+#region Delete existing local repository
 
 if (Test-Path -Path $localRepositoryPath) {
     Write-Host "Deleting existing local repository..." -ForegroundColor Cyan
@@ -83,24 +83,23 @@ if (Test-Path -Path $localRepositoryPath) {
     Write-Host "Deleted process completed successfully" -ForegroundColor Green
 }
 
-#--------------------
+#endregion
 
-# clone remote repository
-try {
-    Write-Host "Start cloning the remote repository..." -ForegroundColor Cyan
-    git clone --branch $brnachName $remoteRepositoryUrl $localRepositoryPath
-    Write-Host "Repository has been cloned successfully" -ForegroundColor Green
-}
-catch {
-    Write-Host "Failed to clone the repository" -ForegroundColor Red
-    Write-Host "$($_.Exception.Message)" -ForegroundColor Red
-    return
+
+#region clone remote repository
+Write-Host "Start cloning the remote repository..." -ForegroundColor Cyan
+git clone --branch $brnachName $remoteRepositoryUrl $localRepositoryPath
+
+if (-not $?) {
+    Write-Error "Failed to clone the repository"
+    exit 1
 }
 
+Write-Host "Repository has been cloned successfully" -ForegroundColor Green
+#endregion
 
-#--------------------
 
-# build the application
+#region build the application
 if ($publishApi -eq "y") {
     try {
         Write-Host "Start building the API..." -ForegroundColor Cyan
@@ -110,9 +109,11 @@ if ($publishApi -eq "y") {
     catch {
         Write-Host "Failed to build the API" -ForegroundColor Red
         Write-Host "$($_.Exception.Message)" -ForegroundColor Red
-        return
+        exit 1
     }
 }
+
+#endregion
 
 #--------------------
 
@@ -120,7 +121,7 @@ if ($publishApi -eq "y") {
 
 #--------------------
 
-# build angular application
+#region build angular application
 if ($publishAngular -eq "y") {
     try {
         Write-Host "Building angular client app..." -ForegroundColor Cyan
@@ -136,21 +137,21 @@ if ($publishAngular -eq "y") {
     catch {
         Write-Host "Failed to build angular client app" -ForegroundColor Red
         Write-Host "$($_.Exception.Message)" -ForegroundColor Red
-        return
+        exit 1
     }  
 }
+#endregion
 
-#-----------------------
-# open session to the server
+#region open session to the server
 $session = New-PSSession -ComputerName $remoteComputer -Credential (New-Object System.Management.Automation.PSCredential $remoteUsername, $remotePassword)
 
 if ($null -eq $session) {
     Write-Host "Error: Failed to create session with remote computer."
-    return
+    exit 1
 }
+#endregion
 
-#---------------------
-# backup the current build on the production server
+#region backup the current build on the production server
 
 $backupSuccess = $false
 try {
@@ -159,27 +160,18 @@ try {
 
     if ($publishApi -eq "y") {
 
-        Write-Host "Stop the API site" -ForegroundColor Cyan
-        $stop = { Stop-WebSite $args[0] };  
-        Invoke-Command -Session $session -ScriptBlock $stop -ArgumentList $siteName 
-        Write-Host "API site stopped successfully" -ForegroundColor Green
+       Stop-Site -Session $session -SiteName $siteName
 
         Write-Host "Start API backup..." -ForegroundColor Cyan
-        Write-Host "Zipping current version before backup..." -ForegroundColor Cyan
 
-        $zipPath = $remoteApiFolder+"\"+$timestamp+".zip"
-        Set-Alias Start-SevenZip $sevenZipPath
-        
-        $scriptBlock = {
-            param($sevenZipPath, $outputZipFile, $remoteApiFolder)
-            & $sevenZipPath a -mx=9 -tzip $outputZipFile $remoteApiFolder
-        }
-        Invoke-Command -Session $session -ScriptBlock $scriptBlock -ArgumentList $sevenZipPath ,$zipPath, $remoteApiFolder
+        Write-Host "Zipping current version before backup..." -ForegroundColor Cyan
+        $zipPath = $remoteApiFolder + "\" + $timestamp + ".zip"
+        Zip -OutputPath $zipPath -InputPath $remoteApiFolder
 
         Write-Host "Copying to a local folder..." -ForegroundColor Cyan
         Copy-Item -Path $remoteApiFolder\$timestamp.zip -Destination $localRepositoryPath"\temp" -FromSession $session -Verbose -Recurse
         Write-Host "do backup on the server ..." -ForegroundColor Cyan
-        $remoteApiBackupFolder = "D:\AutoPublishBackup\\api\" + $timestamp
+        $remoteApiBackupFolder = "D:\AutoPublishBackup\api\" + $timestamp
         Copy-Item -Path $localRepositoryPath"\temp" -Destination $remoteApiBackupFolder -ToSession $session -Verbose -Recurse
         
         Write-Host "deleting local temp folder..." -ForegroundColor Cyan
@@ -200,15 +192,17 @@ catch {
     Write-Host "Failed to backup" -ForegroundColor Red
     Write-Host "$($_.Exception.Message)" -ForegroundColor Red
     Remove-PSSession $session
-    return
+    exit 1
 }
 
 
 if ($backupSuccess -eq $false) {
     Remove-PSSession $session
     Write-Host "Failed to backup the current build on the production server" -ForegroundColor Red
-    return
+    exit 1
 }
+
+#endregion
 
 #---------------------
 # copy the application to the production server
@@ -230,7 +224,7 @@ catch {
     Write-Host "Failed to copy the application to the production server" -ForegroundColor Red
     Write-Host "$($_.Exception.Message)" -ForegroundColor Red
     Remove-PSSession $session
-    return
+    exit 1
 }
 
 # copy the build to the production server

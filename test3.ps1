@@ -1,5 +1,7 @@
+. .\functions.ps1
 
-$sevenZipPath = "C:\Program Files\7-Zip\7z.exe"
+
+
 
 $session = New-PSSession -ComputerName $remoteComputer -Credential (New-Object System.Management.Automation.PSCredential $remoteUsername, $remotePassword)
 
@@ -18,26 +20,19 @@ try {
 
     if ($publishApi -eq "y") {
 
-        Write-Host "Stop the API site" -ForegroundColor Cyan
-        $stop = { Stop-WebSite $args[0] };  
-        Invoke-Command -Session $session -ScriptBlock $stop -ArgumentList $siteName 
-        Write-Host "API site stopped successfully" -ForegroundColor Green
+       Stop-Site -Session $session -SiteName $siteName
 
         Write-Host "Zipping current version before backup..." -ForegroundColor Cyan
-
         $zipPath = $remoteApiFolder+"\"+$timestamp+".zip"
-        Set-Alias Start-SevenZip $sevenZipPath
-        
-        $scriptBlock = {
-            param($sevenZipPath, $outputZipFile, $remoteApiFolder)
-            & $sevenZipPath a -mx=9 -tzip $outputZipFile $remoteApiFolder
-        }
-        Invoke-Command -Session $session -ScriptBlock $scriptBlock -ArgumentList $sevenZipPath ,$zipPath, $remoteApiFolder
-
-
-
+        Zip -OutputPath $zipPath -InputPath $remoteApiFolder
 
         Write-Host "Start API backup..." -ForegroundColor Cyan
+        Backup-RemoteFolder `
+            -TimeStamp $timestamp `
+            -SourceFolder $remoteApiFolder `
+            -DestinationFolder $remoteBackupFolder"\api" `
+            -LocalFolder $localRepositoryPath `
+            -Session $session
 
         Write-Host "Copying to a local folder..." -ForegroundColor Cyan
         Copy-Item -Path $remoteApiFolder\$timestamp.zip -Destination $localRepositoryPath"\temp" -FromSession $session -Verbose -Recurse
