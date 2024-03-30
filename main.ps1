@@ -1,51 +1,50 @@
 ﻿#Note: in iwndows services start: Windows Remote Management (WinRM) service 
 
-. .\functions.ps1
+#. $PSScriptRoot\functions.ps1
 
 #fixed variables
 $remoteRepositoryUrl = "https://Twaijrigcs@dev.azure.com/Twaijrigcs/Wafi/_git/Wafi"
 $localRepositoryPath = "C:\Storage\publisher-temp"
-#$dotNetVersion = "7."
 $remoteComputer = "192.168.13.15"
 $remoteApiFolder = "C:\inetpub\wwwroot\wafi-staging\wafi-api-staging"
-$remoteBackupFolder = "AutoPublishBackup"
+$remoteAngularFolder = "C:\inetpub\wwwroot\wafi-staging\wafi-ng-staging"
+$remoteBackupFolder = "D:\AutoPublishBackup"
 $remoteUsername = "twaijri-kw\pay.server"
 $remotePassword = ConvertTo-SecureString "Fmt@P@ssw0rd2019" -AsPlainText -Force
 $siteName = "wafi-api-staging"
 
 
 
-
-
 #Import-Module IISAdministration
 #Import-Module $env:windir\System32\inetsrv\Microsoft.Web.Administration
 
-
-
 #--------------------
 
-# check if the framework is installed
-# $installedSdks = & dotnet --list-sdks
-# $isDotNetInstalled = $false
-# foreach ($sdk in $installedSdks) {
-#     if ($sdk.StartsWith($dotNetVersion)) {
-#         $isDotNetInstalled = $true
-#     }
-# }
+#region check if the framework is installed
+$installedSdks = & dotnet --list-sdks
+$isDotNetInstalled = $false
+foreach ($sdk in $installedSdks) {
+    if ($sdk.StartsWith("7.") -or $sdk.StartsWith("8.")) {
+        $isDotNetInstalled = $true
+    }
+}
 
-# if ($isDotNetInstalled -eq $false) {
-#     Write-Host "Please install dotnet $dotNetVersion and try again." -ForegroundColor Red
-#     return
-# }
+if ($isDotNetInstalled -eq $false) {
+    Write-Host "Please install dotnet SDK and try again." -ForegroundColor Red
+    exit 1
+}
 
+#endregion
+
+#region check if nodejs is installed
 if (!(Get-Command npm -ErrorAction SilentlyContinue)) {
     Write-Host "Error: npm not found. Please install Node.js first." -ForegroundColor Red
     exit 1
 }
 
-#--------------------
+#endregion
 
-# check if the remote server is reachable
+#region check if the remote server is reachable
 try {
     $isHostFound = $false
     $availableHosts = Get-Item WSMan:\localhost\Client\TrustedHosts
@@ -67,9 +66,9 @@ catch {
     exit 1
 }
 
-#--------------------
+#endregion
 
-# ask user for the branch name
+# read user inputs
 $brnachName = Read-Host "Enter remote branch name"
 $publishApi = Read-Host "Do you want to publish the API? (y/n)"
 $publishAngular = Read-Host "Do you want to publish the Angular client? (y/n)"
@@ -142,6 +141,8 @@ if ($publishAngular -eq "y") {
 }
 #endregion
 
+
+
 #region open session to the server
 $session = New-PSSession -ComputerName $remoteComputer -Credential (New-Object System.Management.Automation.PSCredential $remoteUsername, $remotePassword)
 
@@ -151,41 +152,45 @@ if ($null -eq $session) {
 }
 #endregion
 
+
+
 #region backup the current build on the production server
 
-$backupSuccess = $false
+$apiBackupSuccess = $false
+$ngBackupSuccess = $false
+
 try {
     $currentDateTime = Get-Date
     $timestamp = $currentDateTime.ToString("ddMMyyyyHHmmss");
 
     if ($publishApi -eq "y") {
 
-       Stop-Site -Session $session -SiteName $siteName
-
+        Stop-Site -Session $session -SiteName $siteName
         Write-Host "Start API backup..." -ForegroundColor Cyan
-
-        Write-Host "Zipping current version before backup..." -ForegroundColor Cyan
-        $zipPath = $remoteApiFolder + "\" + $timestamp + ".zip"
-        Zip -OutputPath $zipPath -InputPath $remoteApiFolder
-
-        Write-Host "Copying to a local folder..." -ForegroundColor Cyan
-        Copy-Item -Path $remoteApiFolder\$timestamp.zip -Destination $localRepositoryPath"\temp" -FromSession $session -Verbose -Recurse
-        Write-Host "do backup on the server ..." -ForegroundColor Cyan
-        $remoteApiBackupFolder = "D:\AutoPublishBackup\api\" + $timestamp
-        Copy-Item -Path $localRepositoryPath"\temp" -Destination $remoteApiBackupFolder -ToSession $session -Verbose -Recurse
-        
-        Write-Host "deleting local temp folder..." -ForegroundColor Cyan
-        Remove-Item -LiteralPath $localRepositoryPath"\temp" -Force -Recurse
-    
+        $zipPath = $remoteBackupFolder + "\api\" + $timestamp + ".zip"
+        $apiBackupSuccess = Zip -OutputPath $zipPath -InputPath $remoteApiFolder
+        Write-Host "Api has been backedup successfully" -ForegroundColor Green
     }
     
     if ($publishAngular -eq "y") {
-        $remoteAngularBackupFolder = $remoteBackupFolder + "\ng\" + $timestamp
-        Write-Host "Start Angular backup" -ForegroundColor Cyan
-        Copy-Item -Path $remoteApiFolder -Destination "\\$remoteComputer\$remoteAngularBackupFolder" -Recurse -FromSession $session
+        Write-Host "Start Angular backup..." -ForegroundColor Cyan
+        $zipPath = $remoteBackupFolder + "\ng\" + $timestamp + ".zip"
+        $ngBackupSuccess = Zip -OutputPath $zipPath -InputPath $remoteAngularFolder
+        Write-Host "Angular has been backedup successfully" -ForegroundColor Green
     }
 
-    $backupSuccess = $true
+    if ($publishApi -eq "y" -and $apiBackupSuccess -eq $false) {
+        Write-Host "Failed to backup the current build on the production server" -ForegroundColor Red
+        Remove-PSSession $session
+        exit 1
+    }
+
+    if ($publishAngular -eq "y" -and $ngBackupSuccess -eq $false) {
+        Write-Host "Failed to backup the current build on the production server" -ForegroundColor Red
+        Remove-PSSession $session
+        exit 1
+    }
+
     Write-Host "Completed backup process" -ForegroundColor Green
 }
 catch {
@@ -195,17 +200,10 @@ catch {
     exit 1
 }
 
-
-if ($backupSuccess -eq $false) {
-    Remove-PSSession $session
-    Write-Host "Failed to backup the current build on the production server" -ForegroundColor Red
-    exit 1
-}
-
 #endregion
 
-#---------------------
-# copy the application to the production server
+
+#region copy the application to the production server
 try {
     if ($publishApi -eq "y") {
         $childItems = Get-ChildItem -Path $localRepositoryPath"\api-publish"
@@ -213,10 +211,15 @@ try {
         Copy-Item -Path $childItems.FullName -Destination $remoteApiFolder"\" -ToSession $session -Recurse -Verbose
         Write-Host "Api has been copied successfully" -ForegroundColor Green
 
-        Write-Host "Start the API site" -ForegroundColor Cyan
-        $start = { Start-WebSite $args[0] };  
-        Invoke-Command -Session $session -ScriptBlock $stop -ArgumentList $siteName 
-        Write-Host "API site has been started successfully" -ForegroundColor Green
+        Start-Site -Session $session -SiteName $siteName
+    }
+
+    if ($publishAngular -eq "y") {
+        $childItems = Get-ChildItem -Path $localRepositoryPath"\src\Wafi.Client\dist"
+        Write-Host "Copy the Angular client to the server" -ForegroundColor Cyan
+        Remove-RemoteFolder -Folder $remoteAngularFolder -Session $session
+        Copy-Item -Path $childItems.FullName -Destination $remoteAngularFolder"\" -ToSession $session -Recurse -Verbose
+        Write-Host "Angular client has been copied successfully" -ForegroundColor Green
     }
    
 }
@@ -227,10 +230,122 @@ catch {
     exit 1
 }
 
-# copy the build to the production server
-
-
+#endregion copy the build to the production server
 
 
 # delete local source code and publish folders
 Remove-PSSession $session
+Remove-Item -LiteralPath $localRepositoryPath -Force -Recurse
+
+
+
+
+
+
+#region helper functions
+$sevenZipPath = "C:\Program Files\7-Zip\7z.exe"
+
+function Stop-Site {
+    param(
+        [System.Management.Automation.Runspaces.PSSession]$Session,
+        [string]$SiteName
+    )
+
+    Write-Host "Stop the API site" -ForegroundColor Cyan
+    $stop = { Stop-WebSite $args[0] }; 
+    Invoke-Command -Session $Session -ScriptBlock $stop -ArgumentList $SiteName
+    Write-Host "API site stopped successfully" -ForegroundColor Green
+}
+
+function Start-Site {
+    param(
+        [System.Management.Automation.Runspaces.PSSession]$Session,
+        [string]$SiteName
+    )
+
+    Write-Host "Start the API site" -ForegroundColor Cyan
+    $start = { Start-WebSite $args[0] };  
+    Invoke-Command -Session $Session -ScriptBlock $start -ArgumentList $SiteName
+    Write-Host "API site started successfully" -ForegroundColor Green
+}
+
+function Zip {
+    param(
+        [string]$OutputPath,
+        [string]$InputPath
+    )
+
+    try {
+        $scriptBlock = {
+            param($sevenZipPath, $outputZipFile, $remoteApiFolder)
+            & $sevenZipPath a -mx=9 -tzip $outputZipFile $remoteApiFolder
+        }
+    
+        Invoke-Command -Session $session -ScriptBlock $scriptBlock `
+            -ArgumentList $sevenZipPath , $OutputPath, $InputPath
+    }
+    catch {
+        Write-Host "$($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    }
+   
+    return $true
+}
+
+function Backup-RemoteFolder {
+
+    try {
+        param(
+            [string]$SourceFolder,
+            [string]$DestinationFolder,
+            [string]$LocalFolder,
+            [System.Management.Automation.Runspaces.PSSession]$Session
+        )
+
+        Write-Host "Copying to a local folder..." -ForegroundColor Cyan
+        Copy-Item -Path $SourceFolder\$TimeStamp.zip `
+            -Destination $LocalFolder"\temp" `
+            -FromSession $Session -Verbose -Recurse
+
+        Write-Host "do backup on the server ..." -ForegroundColor Cyan
+        Copy-Item -Path $LocalFolder -Destination $DestinationFolder -ToSession `
+            $Session -Verbose -Recurse
+
+        Write-Host "deleting local temp folder..." -ForegroundColor Cyan
+        Remove-Item -LiteralPath $LocalFolder -Force -Recurse
+
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Remove-RemoteFolder {
+    param(
+        [string]$ComputerName,
+        [string]$Folder
+    )
+
+    try {
+        $scriptBlock = {
+            param ($folderPath)
+            if (Test-Path -Path $folderPath) {
+                Get-ChildItem -Path $Folder -Recurse | Remove-Item -Force -Recurse
+                Write-Output "The folder contents have been deleted, but the folder has been kept."
+            } else {
+                Write-Output "The specified folder does not exist."
+            }
+        }
+        
+        # Execute the script block on the remote computer
+        Invoke-Command -ComputerName $ComputerName -ScriptBlock $scriptBlock -ArgumentList $Folder
+    }
+    catch {
+        Write-Host "$($_.Exception.Message)" -ForegroundColor Red
+        exit 0
+    }
+
+   
+}
+#endregion

@@ -1,77 +1,35 @@
-
+#. $PSScriptRoot\functions.ps1
+. .\functions.ps1
 
 #fixed variables
 $remoteRepositoryUrl = "https://Twaijrigcs@dev.azure.com/Twaijrigcs/Wafi/_git/Wafi"
 $localRepositoryPath = "C:\Storage\publisher-temp"
-#$dotNetVersion = "7."
 $remoteComputer = "192.168.13.15"
-$remoteApiFolder = "C:\inetpub\wwwroot\wafi-api-pubtest"
-$remoteBackupFolder = "AutoPublishBackup"
+$remoteApiFolder = "C:\inetpub\wwwroot\wafi-staging\wafi-api-staging"
+$remoteBackupFolder = "D:\AutoPublishBackup"
 $remoteUsername = "twaijri-kw\pay.server"
 $remotePassword = ConvertTo-SecureString "Fmt@P@ssw0rd2019" -AsPlainText -Force
-#--------------------
+$siteName = "wafi-api-staging"
+$remoteAngularFolder = "C:\inetpub\wwwroot\wafi-staging\wafi-ng-staging"
 
-$publishApi = "y"
 
-#-----------------------
-# open session to the server
+$publishAngular = "y"
+
+#region open session to the server
 $session = New-PSSession -ComputerName $remoteComputer -Credential (New-Object System.Management.Automation.PSCredential $remoteUsername, $remotePassword)
 
 if ($null -eq $session) {
     Write-Host "Error: Failed to create session with remote computer."
-    return
+    exit 1
 }
+#endregion
 
-#---------------------
-# backup the current build on the production server
 
-$backupSuccess = $false
-try {
-    $currentDateTime = Get-Date
-
-    if ($publishApi -eq "y") {
-        $remoteApiBackupFolder = $remoteBackupFolder + "\api\" + $currentDateTime.ToString("ddMMyyyyHHmmss")
-        Write-Host "Start API backup" -ForegroundColor Cyan
-        Copy-Item -Path $remoteApiFolder -Destination "\\$remoteComputer\$remoteApiBackupFolder" -Recurse -FromSession $session
-    }
-    
-    if ($publishAngular -eq "y") {
-        $remoteAngularBackupFolder = $remoteBackupFolder + "\ng\" + $currentDateTime.ToString("ddMMyyyyHHmmss")
-        Write-Host "Start Angular backup" -ForegroundColor Cyan
-        Copy-Item -Path $remoteApiFolder -Destination "\\$remoteComputer\$remoteAngularBackupFolder" -Recurse -FromSession $session
-    }
-
-    $backupSuccess = $true
-    Write-Host "Completed backup process" -ForegroundColor Green
+if ($publishAngular -eq "y") {
+    $childItems = Get-ChildItem -Path $localRepositoryPath"\src\Wafi.Client\dist"
+    Write-Host "Copy the Angular client to the server" -ForegroundColor Cyan
+    Remove-RemoteFolder -ComputerName $remoteComputer -Folder $remoteAngularFolder -Session $session
+    #Copy-Item -Path $childItems.FullName -Destination $remoteAngularFolder"\" -ToSession $session -Recurse -Verbose
+    Write-Host "Angular client has been copied successfully" -ForegroundColor Green
 }
-catch {
-    Write-Host "Failed to backup" -ForegroundColor Red
-    Write-Host "$($_.Exception.Message)" -ForegroundColor Red
-    Remove-PSSession $session
-    return
-}
-
-
-if ($backupSuccess -eq $false) {
-    Remove-PSSession $session
-    Write-Host "Failed to backup the current build on the production server" -ForegroundColor Red
-    return
-}
-
-#---------------------
-# copy the application to the production server
-try {
-    if ($publishApi -eq "y") {
-        $childItems = Get-ChildItem -Path $localRepositoryPath"\api-publish"
-        Write-Host "Copy the API to the server" -ForegroundColor Cyan
-        Copy-Item -Path $childItems.FullName -Destination $remoteApiFolder"\" -ToSession $session -Recurse -Verbose
-        Write-Host "ApiI has been copied successfully" -ForegroundColor Green
-    }
-   
-}
-catch {
-    Write-Host "Failed to copy the application to the production server" -ForegroundColor Red
-    Write-Host "$($_.Exception.Message)" -ForegroundColor Red
-    Remove-PSSession $session
-    return
-}
+ 
