@@ -1,62 +1,42 @@
-. .\functions.ps1
+$remoteRepositoryUrl = "git@ssh.dev.azure.com:v3/Twaijrigcs/Wafi/Wafi"
+$localRepositoryPath = "C:\Storage\publisher-temp"
+$brnachName = "develop"
 
 
+Clone-Repo | Build-Repo 
+Complete-Repo
 
 
-$session = New-PSSession -ComputerName $remoteComputer -Credential (New-Object System.Management.Automation.PSCredential $remoteUsername, $remotePassword)
+function Clone-Repo {
+    Get-Service -Name ssh-agent
+    Set-Service ssh-agent -StartupType Manual
+    Start-Service ssh-agent
+    ssh-add ./od_rsa
+    git clone --branch $brnachName $remoteRepositoryUrl $localRepositoryPath
 
-if ($null -eq $session) {
-    Write-Host "Error: Failed to create session with remote computer."
-    return
+    if ($LASTEXITCODE -eq 0) {
+        Write-Output $true
+    }
+    else {
+        Write-Output $false
+    }
 }
 
-
-
-try {
-
-    $currentDateTime = Get-Date
-    $timestamp = $currentDateTime.ToString("ddMMyyyyHHmmss");
+function Build-Repo {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline)] $check)
     
-
-    if ($publishApi -eq "y") {
-
-       Stop-Site -Session $session -SiteName $siteName
-
-        Write-Host "Zipping current version before backup..." -ForegroundColor Cyan
-        $zipPath = $remoteApiFolder+"\"+$timestamp+".zip"
-        Zip -OutputPath $zipPath -InputPath $remoteApiFolder
-
-        Write-Host "Start API backup..." -ForegroundColor Cyan
-        Backup-RemoteFolder `
-            -TimeStamp $timestamp `
-            -SourceFolder $remoteApiFolder `
-            -DestinationFolder $remoteBackupFolder"\api" `
-            -LocalFolder $localRepositoryPath `
-            -Session $session
-
-        Write-Host "Copying to a local folder..." -ForegroundColor Cyan
-        Copy-Item -Path $remoteApiFolder\$timestamp.zip -Destination $localRepositoryPath"\temp" -FromSession $session -Verbose -Recurse
-        Write-Host "do backup on the server ..." -ForegroundColor Cyan
-        $remoteApiBackupFolder = "D:\AutoPublishBackup\\api\" + $timestamp
-        Copy-Item -Path $localRepositoryPath"\temp" -Destination $remoteApiBackupFolder -ToSession $session -Verbose -Recurse
-        
-        Write-Host "deleting local temp folder..." -ForegroundColor Cyan
-        Remove-Item -LiteralPath $localRepositoryPath"\temp" -Force -Recurse
-
+    if ($check -eq $true) {
+        Write-Host "Building repository..........."
     }
-    
-    if ($publishAngular -eq "y") {
-        $remoteAngularBackupFolder = $remoteBackupFolder + "\ng\" + $timestamp
-        Write-Host "Start Angular backup" -ForegroundColor Cyan
-        Copy-Item -Path $remoteApiFolder -Destination "\\$remoteComputer\$remoteAngularBackupFolder" -Recurse -FromSession $session
+    else {
+        Write-Host "Failed to clone repository xxxxxxxxxxxxxxxxxx"
+        exit 1
     }
 
-    $backupSuccess = $true
-    Write-Host "Completed backup process" -ForegroundColor Green
 }
-catch {
-    Write-Host "Failed to backup" -ForegroundColor Red
-    Write-Host "$($_.Exception.Message)" -ForegroundColor Red
-    Remove-PSSession $session
-    return
+
+function Complete-Repo {
+    Write-Host "Completing repository..........."
 }

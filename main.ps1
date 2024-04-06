@@ -1,9 +1,9 @@
-﻿#Note: in iwndows services start: Windows Remote Management (WinRM) service 
+﻿#Note: in wiwndows services start: Windows Remote Management (WinRM) service 
 
-#. $PSScriptRoot\functions.ps1
+. $PSScriptRoot\functions.ps1
 
 #fixed variables
-$remoteRepositoryUrl = "https://Twaijrigcs@dev.azure.com/Twaijrigcs/Wafi/_git/Wafi"
+$remoteRepositoryUrl = "git@ssh.dev.azure.com:v3/Twaijrigcs/Wafi/Wafi"
 $localRepositoryPath = "C:\Storage\publisher-temp"
 $remoteComputer = "192.168.13.15"
 $remoteApiFolder = "C:\inetpub\wwwroot\wafi-staging\wafi-api-staging"
@@ -21,7 +21,7 @@ $siteName = "wafi-api-staging"
 #--------------------
 
 #region check if the framework is installed
-$installedSdks = & dotnet --list-sdks
+$installedSdks = & dotnet --list-sdks -ErrorAction 
 $isDotNetInstalled = $false
 foreach ($sdk in $installedSdks) {
     if ($sdk.StartsWith("7.") -or $sdk.StartsWith("8.")) {
@@ -42,6 +42,13 @@ if (!(Get-Command npm -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+#endregion
+
+#region check if git is installed
+if (!(Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Host "Error: git not found. Please install git first." -ForegroundColor Red
+    exit 1
+}
 #endregion
 
 #region check if the remote server is reachable
@@ -87,6 +94,10 @@ if (Test-Path -Path $localRepositoryPath) {
 
 #region clone remote repository
 Write-Host "Start cloning the remote repository..." -ForegroundColor Cyan
+Get-Service -Name ssh-agent
+Set-Service ssh-agent -StartupType Manual
+Start-Service ssh-agent
+ssh-add ./wafi
 git clone --branch $brnachName $remoteRepositoryUrl $localRepositoryPath
 
 if (-not $?) {
@@ -207,8 +218,9 @@ catch {
 try {
     if ($publishApi -eq "y") {
         $childItems = Get-ChildItem -Path $localRepositoryPath"\api-publish"
+        Remove-RemoteFolder ComputerName $remoteComputer Folder $remoteApiFolder
         Write-Host "Copy the API to the server" -ForegroundColor Cyan
-        Copy-Item -Path $childItems.FullName -Destination $remoteApiFolder"\" -ToSession $session -Recurse -Verbose
+        Copy-Item -Path $childItems.FullName -Destination $remoteApiFolder"\" -ToSession $session -Force -Recurse -Verbose
         Write-Host "Api has been copied successfully" -ForegroundColor Green
 
         Start-Site -Session $session -SiteName $siteName
@@ -236,116 +248,3 @@ catch {
 # delete local source code and publish folders
 Remove-PSSession $session
 Remove-Item -LiteralPath $localRepositoryPath -Force -Recurse
-
-
-
-
-
-
-#region helper functions
-$sevenZipPath = "C:\Program Files\7-Zip\7z.exe"
-
-function Stop-Site {
-    param(
-        [System.Management.Automation.Runspaces.PSSession]$Session,
-        [string]$SiteName
-    )
-
-    Write-Host "Stop the API site" -ForegroundColor Cyan
-    $stop = { Stop-WebSite $args[0] }; 
-    Invoke-Command -Session $Session -ScriptBlock $stop -ArgumentList $SiteName
-    Write-Host "API site stopped successfully" -ForegroundColor Green
-}
-
-function Start-Site {
-    param(
-        [System.Management.Automation.Runspaces.PSSession]$Session,
-        [string]$SiteName
-    )
-
-    Write-Host "Start the API site" -ForegroundColor Cyan
-    $start = { Start-WebSite $args[0] };  
-    Invoke-Command -Session $Session -ScriptBlock $start -ArgumentList $SiteName
-    Write-Host "API site started successfully" -ForegroundColor Green
-}
-
-function Zip {
-    param(
-        [string]$OutputPath,
-        [string]$InputPath
-    )
-
-    try {
-        $scriptBlock = {
-            param($sevenZipPath, $outputZipFile, $remoteApiFolder)
-            & $sevenZipPath a -mx=9 -tzip $outputZipFile $remoteApiFolder
-        }
-    
-        Invoke-Command -Session $session -ScriptBlock $scriptBlock `
-            -ArgumentList $sevenZipPath , $OutputPath, $InputPath
-    }
-    catch {
-        Write-Host "$($_.Exception.Message)" -ForegroundColor Red
-        return $false
-    }
-   
-    return $true
-}
-
-function Backup-RemoteFolder {
-
-    try {
-        param(
-            [string]$SourceFolder,
-            [string]$DestinationFolder,
-            [string]$LocalFolder,
-            [System.Management.Automation.Runspaces.PSSession]$Session
-        )
-
-        Write-Host "Copying to a local folder..." -ForegroundColor Cyan
-        Copy-Item -Path $SourceFolder\$TimeStamp.zip `
-            -Destination $LocalFolder"\temp" `
-            -FromSession $Session -Verbose -Recurse
-
-        Write-Host "do backup on the server ..." -ForegroundColor Cyan
-        Copy-Item -Path $LocalFolder -Destination $DestinationFolder -ToSession `
-            $Session -Verbose -Recurse
-
-        Write-Host "deleting local temp folder..." -ForegroundColor Cyan
-        Remove-Item -LiteralPath $LocalFolder -Force -Recurse
-
-        return $true
-    }
-    catch {
-        return $false
-    }
-}
-
-function Remove-RemoteFolder {
-    param(
-        [string]$ComputerName,
-        [string]$Folder
-    )
-
-    try {
-        $scriptBlock = {
-            param ($folderPath)
-            if (Test-Path -Path $folderPath) {
-                Get-ChildItem -Path $Folder -Recurse | Remove-Item -Force -Recurse
-                Write-Output "The folder contents have been deleted, but the folder has been kept."
-            } else {
-                Write-Output "The specified folder does not exist."
-            }
-        }
-        
-        # Execute the script block on the remote computer
-        Invoke-Command -ComputerName $ComputerName -ScriptBlock $scriptBlock -ArgumentList $Folder
-    }
-    catch {
-        Write-Host "$($_.Exception.Message)" -ForegroundColor Red
-        exit 0
-    }
-
-   
-}
-#endregion
