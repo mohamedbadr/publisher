@@ -95,9 +95,13 @@ if (Test-Path -Path $localRepositoryPath) {
 #region clone remote repository
 Write-Host "Start cloning the remote repository..." -ForegroundColor Cyan
 Get-Service -Name ssh-agent
+if (-not $?) {
+    Write-Error "ssh-agent service is not running. Please start the service and try again."
+    exit 1
+}
 Set-Service ssh-agent -StartupType Manual
 Start-Service ssh-agent
-ssh-add ./wafi
+ssh-add ./id_rsa
 git clone --branch $brnachName $remoteRepositoryUrl $localRepositoryPath
 
 if (-not $?) {
